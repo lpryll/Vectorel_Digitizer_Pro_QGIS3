@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect width="24" height="24" rx="3" fill="#93b023"/>
+  <circle cx="12" cy="12" r="7" fill="none" stroke="#fff" stroke-width="1.5"/>
+  <path d="M12 5v14M5 12h14" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="12" y="9" font-family="Arial" font-size="3.5" font-weight="bold" fill="#fff" text-anchor="middle" dominant-baseline="middle">X</text>
+  <text x="15" y="16" font-family="Arial" font-size="3.5" font-weight="bold" fill="#fff" text-anchor="middle" dominant-baseline="middle">Y</text>
+</svg>
