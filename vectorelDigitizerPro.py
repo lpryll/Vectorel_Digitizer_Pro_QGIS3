@@ -251,6 +251,10 @@ class VectorelDigitizerPro:
                 self.__drawTool.canceled.disconnect(self._onDrawingCanceled)
             except Exception:
                 logging.debug('Disconnect canceled failed: %s', Exception)
+            try:
+                self.__drawTool.pointInserted.disconnect(self._onToolPointInserted)
+            except Exception:
+                logging.debug('Disconnect pointInserted failed: %s', Exception)
 
         self.__drawTool = DrawingTool(self.canvas, geomType=geomType)
         self.__drawTool.pointAdded.connect(self._drawPointAdded)
@@ -258,6 +262,7 @@ class VectorelDigitizerPro:
         self.__drawTool.drawingFinished.connect(self._onDrawingFinished)
         self.__drawTool.drawingEnded.connect(self._onToolEndDrawing)
         self.__drawTool.canceled.connect(self._onDrawingCanceled)
+        self.__drawTool.pointInserted.connect(self._onToolPointInserted)
 
         try:
             self.__dlgDraw.rejected.disconnect(self._onDrawingCanceled)
@@ -274,6 +279,10 @@ class VectorelDigitizerPro:
         if self.__dlgDraw is not None:
             self.__dlgDraw.addPoint(point)
             self.__dlgDraw.clearPreviewPoint()
+
+    def _onToolPointInserted(self, index, point):
+        if self.__dlgDraw is not None:
+            self.__dlgDraw.insertPoint(index, point)
 
     def _onMouseMoved(self, point):
         if self.__dlgDraw is not None:

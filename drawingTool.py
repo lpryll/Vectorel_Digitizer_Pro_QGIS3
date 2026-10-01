@@ -14,6 +14,7 @@ class DrawingTool(QgsMapTool):
     canceled = pyqtSignal()
     mouseMoved = pyqtSignal(object)
     drawingEnded = pyqtSignal()
+    pointInserted = pyqtSignal(int, object)
 
     def __init__(self, canvas, geomType='polygon'):
         super().__init__(canvas)
@@ -82,6 +83,23 @@ class DrawingTool(QgsMapTool):
         self._moveTimer.setInterval(30)
         self._moveTimer.timeout.connect(self._processDeferredMove)
         self._pendingMovePos = None
+        self._lastMapPos = None
+
+        # Preview shown while Ctrl is held after the drawing is finished:
+        # a dashed line A -> cursor -> B plus a marker at the cursor.
+        self.insertBand = QgsRubberBand(self.canvas, self._line_geom)
+        self.insertBand.setColor(QColor(255, 140, 0))
+        self.insertBand.setWidth(2)
+        try:
+            self.insertBand.setLineStyle(Qt.DashLine)
+        except Exception:
+            logging.debug('Set insert band line style failed')
+        self.insertBand.hide()
+        self.insertMarker = QgsRubberBand(self.canvas, QgsWkbTypes.PointGeometry)
+        self.insertMarker.setIcon(QgsRubberBand.ICON_CIRCLE)
+        self.insertMarker.setColor(QColor(255, 140, 0))
+        self.insertMarker.setIconSize(10)
+        self.insertMarker.hide()
 
         self.cursor = QCursor(QPixmap(["16 16 3 1",
                                          "      c None",
@@ -149,15 +167,96 @@ class DrawingTool(QgsMapTool):
                         bestPoint = pt
         return bestPoint if bestPoint else mapPoint
 
+    # ------------------------------------------------------------------
+    # Insert a vertex between the two nearest vertices (Ctrl, after finish)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _isCtrl(e):
+        return bool(e.modifiers() & Qt.ControlModifier)
+
+    def _canInsert(self):
+        return (self._drawingEnded and not self.isDrawing
+                and self.geomType != 'point' and len(self.points) >= 2)
+
+    @staticmethod
+    def _sqrDistToSegment(p, a, b):
+        dx = b.x() - a.x()
+        dy = b.y() - a.y()
+        lenSq = dx * dx + dy * dy
+        if lenSq == 0:
+            t = 0.0
+        else:
+            t = ((p.x() - a.x()) * dx + (p.y() - a.y()) * dy) / lenSq
+            t = max(0.0, min(1.0, t))
+        cx = a.x() + t * dx
+        cy = a.y() + t * dy
+        return (p.x() - cx) ** 2 + (p.y() - cy) ** 2
+
+    def _nearestSegment(self, mapPoint):
+        """Return (indexA, indexB, insertIndex) of the segment closest to
+        mapPoint. Polygons also include the closing segment (last -> first);
+        lines only consider consecutive vertices."""
+        n = len(self.points)
+        if n < 2:
+            return None
+        segs = [(i, i + 1, i + 1) for i in range(n - 1)]
+        if self.geomType == 'polygon' and n >= 3:
+            segs.append((n - 1, 0, n))
+        best = None
+        bestD = float('inf')
+        for ia, ib, ins in segs:
+            d = self._sqrDistToSegment(mapPoint, self.points[ia], self.points[ib])
+            if d < bestD:
+                bestD = d
+                best = (ia, ib, ins)
+        return best
+
+    def _showInsertPreview(self, mapPoint):
+        seg = self._nearestSegment(mapPoint)
+        if seg is None:
+            self._hideInsertPreview()
+            return
+        ia, ib, _ = seg
+        self.insertBand.reset(self._line_geom)
+        self.insertBand.addPoint(self.points[ia], False)
+        self.insertBand.addPoint(mapPoint, False)
+        self.insertBand.addPoint(self.points[ib], True)
+        self.insertMarker.reset(QgsWkbTypes.PointGeometry)
+        self.insertMarker.addPoint(mapPoint, True)
+        self.insertBand.show()
+        self.insertMarker.show()
+
+    def _hideInsertPreview(self):
+        self.insertBand.reset(self._line_geom)
+        self.insertMarker.reset(QgsWkbTypes.PointGeometry)
+        self.insertBand.hide()
+        self.insertMarker.hide()
+
+    def _insertVertex(self, mapPoint):
+        seg = self._nearestSegment(mapPoint)
+        if seg is None:
+            return
+        insertIndex = seg[2]
+        self.points.insert(insertIndex, QgsPointXY(mapPoint))
+        self._highlightedIndex = insertIndex
+        self._hideInsertPreview()
+        self.updateRubberBand()
+        self.pointInserted.emit(insertIndex, QgsPointXY(mapPoint))
+
     def canvasPressEvent(self, e):
         if e.button() == Qt.MiddleButton:
             self._startPan()
             return
         if e.button() == Qt.LeftButton:
+            if self._isCtrl(e) and self._canInsert():
+                # Ctrl held: snapping is disabled, the vertex goes exactly
+                # where the cursor is.
+                self._insertVertex(self.toMapCoordinates(e.pos()))
+                return
             if not self.isDrawing and len(self.points) > 0:
                 return
             point = self.toMapCoordinates(e.pos())
-            skipSnap = bool(e.modifiers() & Qt.ShiftModifier)
+            skipSnap = bool(e.modifiers() & (Qt.ShiftModifier | Qt.ControlModifier))
             snapped = self._snapPoint(point, skipSnap)
             self.points.append(snapped)
             self.isDrawing = True
@@ -189,9 +288,16 @@ class DrawingTool(QgsMapTool):
             self.endDrawing()
 
     def canvasMoveEvent(self, e):
+        self._lastMapPos = self.toMapCoordinates(e.pos())
+        if self._canInsert():
+            if self._isCtrl(e):
+                self._showInsertPreview(self._lastMapPos)
+            else:
+                self._hideInsertPreview()
+            return
         if self.isDrawing and len(self.points) > 0 and self.geomType != 'point':
-            pos = self.toMapCoordinates(e.pos())
-            skipSnap = bool(e.modifiers() & Qt.ShiftModifier)
+            pos = self._lastMapPos
+            skipSnap = bool(e.modifiers() & (Qt.ShiftModifier | Qt.ControlModifier))
             snapped = self._snapPoint(pos, skipSnap)
             self.rubberBand.movePoint(snapped)
             self._pendingMovePos = snapped
@@ -203,7 +309,17 @@ class DrawingTool(QgsMapTool):
             self.mouseMoved.emit(self._pendingMovePos)
             self._pendingMovePos = None
 
+    def keyReleaseEvent(self, e):
+        if e.key() == Qt.Key_Control:
+            self._hideInsertPreview()
+            e.accept()
+
     def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Control:
+            if self._canInsert() and self._lastMapPos is not None:
+                self._showInsertPreview(self._lastMapPos)
+            e.accept()
+            return
         if e.key() == Qt.Key_Escape:
             self.cancelDrawing()
         elif e.key() == Qt.Key_Return or e.key() == Qt.Key_Enter:
@@ -302,6 +418,7 @@ class DrawingTool(QgsMapTool):
                 self.resetRubberBand()
             else:
                 self.updateRubberBand()
+            self._hideInsertPreview()
             if self._drawingEnded:
                 self._drawingEnded = False
                 self.isDrawing = True
@@ -313,6 +430,7 @@ class DrawingTool(QgsMapTool):
         self.canceled.emit()
 
     def resetRubberBand(self):
+        self._hideInsertPreview()
         if self.geomType == 'point':
             self.rubberBand.reset(self._point_geom)
         elif self.geomType == 'line':
@@ -340,6 +458,7 @@ class DrawingTool(QgsMapTool):
         super().activate()
 
     def deactivate(self):
+        self._hideInsertPreview()
         self.clear()
         self._restoreSnapping()
         super().deactivate()

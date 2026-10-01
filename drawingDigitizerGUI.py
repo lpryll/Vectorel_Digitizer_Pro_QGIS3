@@ -313,7 +313,9 @@ class DrawingDigitizerGUI(QDialog):
             'Left-click to add vertices  ·  '
             'Double-click or press Enter to finish  ·  '
             'Esc to cancel\n'
-            'Hold Shift to temporarily disable snap')
+            'Hold Shift to temporarily disable snap\n'
+                'After finishing: hold Ctrl and click to insert a vertex '
+                'between the nearest two vertices (snap is off)')
         self._instrLbl.setObjectName('instrLabel')
         self._instrLbl.setWordWrap(True)
         root.addWidget(self._instrLbl)
@@ -441,6 +443,8 @@ class DrawingDigitizerGUI(QDialog):
         unitRow.addWidget(lblUnit)
         unitRow.addWidget(self.cbAreaUnit, 1)
         areaLayout.addLayout(unitRow)
+        self._lblAreaTitleRef = lblTitle
+        self._lblAreaUnitRef = lblUnit
 
         self.lblArea = QLabel('Area: —')
         self.lblArea.setObjectName('areaHaLabel')
@@ -562,6 +566,7 @@ class DrawingDigitizerGUI(QDialog):
         self._invalidateTransformCache()
         self.lblCrsInfo.setText(self._crsDisplayText(self.featureCrs))
         self.coordCrsChanged.emit(self.featureCrs)
+        self._updateArea()
 
     def setGeometryType(self, geomType):
         self.geomType = geomType
@@ -581,7 +586,9 @@ class DrawingDigitizerGUI(QDialog):
                 'Left-click to add vertices  ·  '
                 'Double-click or press Enter to finish  ·  '
                 'Esc to cancel\n'
-                'Hold Shift to temporarily disable snap')
+                'Hold Shift to temporarily disable snap\n'
+                'After finishing: hold Ctrl and click to insert a vertex '
+                'between the nearest two vertices (snap is off)')
             self.areaFrame.hide()
             self.lengthFrame.show()
             self.btnEnd.setEnabled(True)
@@ -592,7 +599,9 @@ class DrawingDigitizerGUI(QDialog):
                 'Left-click to add vertices  ·  '
                 'Double-click or press Enter to finish  ·  '
                 'Esc to cancel\n'
-                'Hold Shift to temporarily disable snap')
+                'Hold Shift to temporarily disable snap\n'
+                'After finishing: hold Ctrl and click to insert a vertex '
+                'between the nearest two vertices (snap is off)')
             self.areaFrame.show()
             self.lengthFrame.hide()
             self.btnEnd.setEnabled(True)
@@ -629,6 +638,7 @@ class DrawingDigitizerGUI(QDialog):
             self._invalidateTransformCache()
             self.lblCrsInfo.setText(self._crsDisplayText(new_crs))
             self.coordCrsChanged.emit(new_crs)
+            self._updateArea()
             if old is not None and old.isValid() and old != new_crs:
                 self._updateCoordList()
                 self._updateArea()
@@ -652,6 +662,19 @@ class DrawingDigitizerGUI(QDialog):
             self._updateArea()
             self._updateLength()
             self.vertexSelected.emit(len(self.points) - 1)
+
+    def insertPoint(self, index, point):
+        """Insert a vertex at *index* (used by Ctrl+click after drawing ends)."""
+        if self.geomType == 'point':
+            return
+        index = max(0, min(int(index), len(self.points)))
+        self.points.insert(index, point)
+        self.lblPointCount.setText('Vertices: %d' % len(self.points))
+        self._updateCoordList()
+        self._updateArea()
+        self._updateLength()
+        self.tblCoords.selectRow(index)
+        self.vertexSelected.emit(index)
 
     def undoPoint(self):
         if self.geomType == 'point':
@@ -939,8 +962,7 @@ class DrawingDigitizerGUI(QDialog):
         self._drawingEnded = False
         self.lblPointCount.setText('Vertices: 0')
         self.tblCoords.setRowCount(0)
-        self.lblArea.setText('Area: —')
-        self.areaFrame.hide()
+        self._resetAreaDisplay()
         self.lblLength.setText('Length: —')
         self.lengthFrame.hide()
 
@@ -1003,11 +1025,71 @@ class DrawingDigitizerGUI(QDialog):
         if self._area_sqm > 0:
             self.lblArea.setText(f'Area: {self._convertArea(self._area_sqm)}')
 
+    # ------------------------------------------------------------------
+    # Pseudo-Mercator handling: no area calculation, disabled "N/A" panel
+    # ------------------------------------------------------------------
+    _PSEUDO_MERCATOR_AUTHIDS = (
+        'EPSG:3857', 'EPSG:900913', 'EPSG:3785',
+        'EPSG:102100', 'EPSG:102113')
+
+    @classmethod
+    def _isPseudoMercator(cls, crs):
+        """True for WGS 84 / Pseudo-Mercator (EPSG:3857 and its aliases).
+        Planar area in this CRS is heavily distorted, so it is not computed."""
+        try:
+            if crs is None or not crs.isValid():
+                return False
+            if crs.authid().upper() in cls._PSEUDO_MERCATOR_AUTHIDS:
+                return True
+            desc = crs.description().lower()
+            return 'pseudo-mercator' in desc or 'pseudo mercator' in desc
+        except Exception:
+            return False
+
+    def _setAreaDisabled(self, disabled):
+        grey = '#9a9a9a'
+        self.areaFrame.setEnabled(not disabled)
+        if disabled:
+            self.areaFrame.setStyleSheet(
+                '#areaFrame { background: #f0f0f0; border: 1px solid #cfcfcf; '
+                'border-radius: 5px; padding: 4px; }')
+            self._lblAreaTitleRef.setStyleSheet(
+                'font-weight: bold; font-size: 11pt; color: %s;' % grey)
+            self._lblAreaUnitRef.setStyleSheet('font-size: 9pt; color: %s;' % grey)
+            self.cbAreaUnit.setStyleSheet('font-size: 9pt; color: %s;' % grey)
+            self.lblArea.setStyleSheet(
+                'font-weight: bold; font-size: 11pt; color: %s;' % grey)
+        else:
+            self.areaFrame.setStyleSheet('')
+            self._lblAreaTitleRef.setStyleSheet(
+                'font-weight: bold; font-size: 11pt; color: #1a5c32;')
+            self._lblAreaUnitRef.setStyleSheet('font-size: 9pt; color: #27ae60;')
+            self.cbAreaUnit.setStyleSheet('font-size: 9pt; color: #27ae60;')
+            self.lblArea.setStyleSheet('')
+
+    def _showAreaNA(self):
+        self._area_sqm = 0.0
+        self._setAreaDisabled(True)
+        self.lblArea.setText('Area: N/A')
+        self.areaFrame.show()
+
+    def _resetAreaDisplay(self):
+        self.lblArea.setText('Area: \u2014')
+        if self.geomType == 'polygon' and self._isPseudoMercator(self.featureCrs):
+            self._showAreaNA()
+        else:
+            self._setAreaDisabled(False)
+            self.areaFrame.hide()
+
     def _updateArea(self, use_preview=False):
         if self.geomType != 'polygon':
             self.areaFrame.hide()
             self._area_sqm = 0.0
             return
+        if self._isPseudoMercator(self.featureCrs):
+            self._showAreaNA()
+            return
+        self._setAreaDisabled(False)
         self.areaFrame.hide()
         self._area_sqm = 0.0
         pts = list(self.points)
