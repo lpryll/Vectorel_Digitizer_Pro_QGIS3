@@ -3,13 +3,14 @@ name=Vectorel Digitizer Pro QGIS3
 qgisMinimumVersion=3.0
 qgisMaximumVersion=3.99
 description=Vectorel Digitizer Pro QGIS3 is a QGIS plugin for creating and editing vector features by entering, pasting or modifying numerical vertex coordinates. Includes a map-based polygon drawing tool with live area calculation. Also simultaneously converts coordinates according to CRS selection.
-version=1.1.2
+version=1.2.0
 author=LPRYLL
 email=alperyolal@gmail.com
-about=Vectorel Digitizer Pro QGIS3 adds three tools to the QGIS vector editing toolbar.
+about=Vectorel Digitizer Pro QGIS3 adds four tools to the QGIS vector editing toolbar.
       1. Add By Coordinates: create new features by typing vertex coordinates with real-time area calculation.
       2. Coordinate Editor: edit existing features numerically, with copy/paste and reprojection support and real-time area display.
       3. Drawing Digitizer: draw polygons directly on the map canvas with an editable coordinate table and real-time area display.
+      4. Transform Features: move, rotate and scale the selected features by typing values or interactively with the mouse, with live preview.
       Supports Point, Line, Polygon, Multi-part and Z/M geometries. Coordinate reprojection on the fly.
 
 repository=https://github.com/lpryll/Vectorel_Digitizer_Pro_QGIS3
@@ -18,6 +19,7 @@ homepage=https://github.com/lpryll/Vectorel_Digitizer_Pro_QGIS3
 
 hasProcessingProvider=no
 changelog=
+    1.2.0 - New tool: Transform Features. Move, rotate and scale the selected features either by typing values or interactively by dragging on the map. Rotation: positive = clockwise. Live preview, pivot options (selection centre, each feature's own centre, custom/picked point), Shift = 15 degree rotation steps, snapping support, optional apply-on-release, single undo step per operation.
     1.1.2 - Drawing Digitizer: when the coordinate system is WGS 84 / Pseudo-Mercator (EPSG:3857) the area is not calculated; the area panel is disabled and shows N/A. Thanks to Macit KARADAGLAR for feedback.
     1.1.1 - Drawing Digitizer: after finishing a drawing, hold Ctrl and click to insert a new vertex between the two vertices nearest to the cursor (snap is disabled while Ctrl is held).
     1.1.0 - Critical errors fixed. Code quality enhanced.
@@ -32,7 +34,7 @@ changelog=
     1.0.1 - Vectorel Digitizer Pro QGIS3: full UI modernisation, code quality fixes, renamed plugin and class, QGIS 3 / Qt5 stable release.
     1.0 - Drawing Digitizer tool added: map-based polygon drawing, editable coordinate table, dynamic area calculation, multi-part & ring area support.
 
-tags=create,edit,numerical,coordinates,point,line,polygon,clipboard,multipart,reproject,digitize,vector,area
+tags=create,edit,transform,move,rotate,scale,numerical,coordinates,point,line,polygon,clipboard,multipart,reproject,digitize,vector,area
 experimental=False
 deprecated=False
 server=False

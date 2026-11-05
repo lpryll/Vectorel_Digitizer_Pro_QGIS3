@@ -16,6 +16,8 @@ from .featureFinderTool import FeatureFinderTool
 from .reprojectCoordinates import ReprojectCoordinates
 from .drawingDigitizerGUI import DrawingDigitizerGUI
 from .drawingTool import DrawingTool
+from .transformTool import TransformTool
+from .transformGUI import TransformGUI
 from qgis.gui import QgsMapToolPan
 import logging
 import os.path
@@ -72,6 +74,10 @@ class VectorelDigitizerPro:
         self.__dlgChooser  = None
         self.__dlgDraw     = None
         self.__drawTool    = None
+        self.__dlgTransform    = None
+        self.__transformTool   = None
+        self.__transformAction = None
+        self.__panTool         = None
 
         self.__layer             = None
         self.__layergeometryType = None
@@ -121,6 +127,19 @@ class VectorelDigitizerPro:
         self.iface.addPluginToVectorMenu(self.menu, action)
         self.actions.append(action)
 
+        icon = QIcon(self.plugin_dir + '/images/icon-transform.svg')
+        action = QAction(icon, self.tr('Transform Features'), self.iface.mainWindow())
+        action.triggered.connect(self.runTransform)
+        action.setEnabled(False)
+        action.setCheckable(True)
+        action.setWhatsThis(self.tr(
+            'Transform Features – move, rotate or scale the selected features '
+            'by typing values or interactively with the mouse'))
+        self.iface.digitizeToolBar().addAction(action)
+        self.iface.addPluginToVectorMenu(self.menu, action)
+        self.actions.append(action)
+        self.__transformAction = action
+
         icon = QIcon(self.plugin_dir + '/images/mActionHelpContents.svg')
         action = QAction(icon, self.tr('Help'), self.iface.mainWindow())
         action.triggered.connect(self.help)
@@ -136,6 +155,15 @@ class VectorelDigitizerPro:
 
     def unload(self):
         """Remove plugin menu item and icon from QGIS GUI."""
+        if self.__transformTool is not None:
+            if self.canvas.mapTool() is self.__transformTool:
+                self._setPanTool()
+            self.__transformTool.cleanup()
+            self.__transformTool = None
+        if self.__dlgTransform is not None:
+            self.__dlgTransform.close()
+            self.__dlgTransform.deleteLater()
+            self.__dlgTransform = None
         for action in self.actions:
             self.iface.removePluginVectorMenu(self.tr('&Vectorel Digitizer Pro'), action)
             self.iface.digitizeToolBar().removeAction(action)
@@ -448,7 +476,41 @@ class VectorelDigitizerPro:
         self.createGeom(coord_list)
 
     def _setPanTool(self):
-        self.canvas.setMapTool(QgsMapToolPan(self.canvas))
+        # keep a reference: otherwise the Python wrapper is garbage collected
+        # right away and the canvas is left without any map tool
+        self.__panTool = QgsMapToolPan(self.canvas)
+        self.canvas.setMapTool(self.__panTool)
+
+    def runTransform(self, checked=False):
+        """Activate / deactivate the Transform Features tool (move/rotate/scale)."""
+        if not checked:
+            if (self.__transformTool is not None
+                    and self.canvas.mapTool() is self.__transformTool):
+                self._setPanTool()
+            return
+
+        layer = self.canvas.currentLayer()
+        if layer is None or not layer.isEditable():
+            if self.__transformAction is not None:
+                self.__transformAction.setChecked(False)
+            return
+
+        if self.__transformTool is None:
+            self.__transformTool = TransformTool(self.canvas)
+            self.__dlgTransform = TransformGUI(
+                self.iface.mainWindow(), self.__transformTool)
+            self.__transformTool.closeRequested.connect(
+                self._onTransformCloseRequested)
+            self.__dlgTransform.rejected.connect(self._onTransformCloseRequested)
+
+        self.canvas.setMapTool(self.__transformTool)
+        # mapToolSet -> deactivate() unchecked every action; keep ours checked
+        self.__transformAction.setChecked(True)
+
+    def _onTransformCloseRequested(self):
+        if (self.__transformTool is not None
+                and self.canvas.mapTool() is self.__transformTool):
+            self._setPanTool()
 
     # ------------------------------------------------------------------
     # Help

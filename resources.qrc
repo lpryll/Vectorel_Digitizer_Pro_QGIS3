@@ -12,5 +12,6 @@
     <file>images/mActionSetProjection.svg</file>
     <file>images/swap.svg</file>
     <file>images/icon-draw.svg</file>
+    <file>images/icon-transform.svg</file>
   </qresource>
 </RCC>

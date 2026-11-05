@@ -8,4 +8,6 @@ SOURCES = vectorelDigitizerPro.py \
           featureFinderTool.py \
           highlightFeature.py \
           reprojectCoordinates.py \
+          transformGUI.py \
+          transformTool.py \
           valueChecker.py
